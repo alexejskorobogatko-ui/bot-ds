@@ -12,11 +12,7 @@ import sys
 from datetime import datetime, timedelta
 from flask import Flask
 
-# ==================== ФИКС ДЛЯ WINDOWS ====================
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-# ==================== ВЕБ-СЕРВЕР ====================
+# ==================== ВЕБ-СЕРВЕР ДЛЯ RENDER ====================
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -28,7 +24,12 @@ def run_web():
     web_app.run(host="0.0.0.0", port=port)
 
 # ==================== НАСТРОЙКИ ====================
-TOKEN = "ВАШ_ТОКЕН_ЗДЕСЬ" # ВСТАВЬ СВОЙ ТОКЕН
+# Берем токен из переменных окружения Render
+TOKEN = os.environ.get("TOKEN")
+
+if not TOKEN:
+    print("⛧ ОШИБКА: Токен не найден! Добавь переменную TOKEN в Environment на Render.")
+    sys.exit(1)
 
 TEMPLATES_DIR = "templates"
 MEDIA_DIR = "media"
@@ -53,8 +54,6 @@ tagger_tasks = {}
 afk_state = False
 afk_reason = "АФК"
 autoreply_list = []
-
-# Кулдауны для АФК (ID пользователя: время последнего ответа)
 afk_cooldowns = {} 
 AFK_COOLDOWN_SECONDS = 300 # 5 минут
 
@@ -100,16 +99,14 @@ async def on_message(message):
     global afk_state, afk_reason, autoreply_list, afk_cooldowns
     
     if message.author.id != bot.user.id:
-        # ЛОГИКА АФК С КУЛДАУНОМ
         if afk_state and isinstance(message.channel, discord.DMChannel):
             user_id = message.author.id
             current_time = time.time()
             
-            # Проверяем, прошло ли 5 минут с последнего ответа
             if user_id not in afk_cooldowns or (current_time - afk_cooldowns[user_id]) > AFK_COOLDOWN_SECONDS:
-                afk_cooldowns[user_id] = current_time # Записываем время ответа
+                afk_cooldowns[user_id] = current_time
                 await message.reply(f"⛧ Я в АФК. Причина: {afk_reason}")
-            return # Если кулдаун не прошел - просто игнорируем
+            return
             
         if message.author.id in autoreply_list:
             text = random.choice(current_shablon) if current_shablon else "Автоответ"
@@ -336,7 +333,7 @@ async def afk(ctx, *, reason: str = "АФК"):
     afk_state = not afk_state
     if afk_state:
         afk_reason = reason
-        afk_cooldowns.clear() # Очищаем кулдауны при включении
+        afk_cooldowns.clear() 
         await ctx.send(f"⛧ **AFK ВКЛЮЧЕН** ⛧\nПричина: {reason}")
     else:
         await ctx.send("⛧ **AFK ВЫКЛЮЧЕН** ⛧")
@@ -410,5 +407,8 @@ async def x0(ctx):
 
 # ==================== ЗАПУСК ====================
 if __name__ == "__main__":
+    # Запуск Flask в отдельном потоке (чтобы Render видел живой порт)
     threading.Thread(target=run_web, daemon=True).start()
+    
+    # Запуск бота (токен берется из переменной окружения)
     bot.run(TOKEN)
